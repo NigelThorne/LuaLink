@@ -39,3 +39,35 @@ To use the LuaLink plugin, you need the following:
 
 ## Documentation
 Documentation and examples are available [here](https://lualink.github.io/docs).
+
+<br />
+
+## Development
+
+This fork uses a custom build of LuaJava with macOS ARM64 support and additional improvements.
+
+### Building
+
+1. **Build and publish the custom LuaJava fork locally:**
+   ```bash
+   cd ../luajava  # Or wherever you cloned NigelThorne/luajava
+   git checkout add-macos-support
+   export MACOSX_DEPLOYMENT_TARGET=11.0
+   mise exec -- ./gradlew publishToMavenLocal -x test --no-daemon
+   ```
+
+2. **Build LuaLink:**
+   ```bash
+   ./gradlew shadowJar
+   ```
+
+The plugin jar will be in `build/libs/LuaLink-*.jar` and includes macOS x64, macOS ARM64, Linux x64, Linux ARM64, and Windows x64 native libraries.
+
+### Custom LuaJava Features
+
+This build includes:
+- **macOS Support**: Both Intel (x64) and Apple Silicon (ARM64)
+- **UTF-8 Fix**: Proper Unicode string handling between Lua ↔ Java
+- **Fast Reflection**: Performance improvements using fast-reflection library
+- **Better Error Messages**: Improved method matching error reporting
+- **LuaJIT 5.2 Compatibility**: Lua 5.2 compatibility mode enabled
