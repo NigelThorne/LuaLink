@@ -382,6 +382,57 @@ script:registerCommand(function(sender, args)
     end
 
     local player = sender
+
+    -- Convert Java args array to Lua table
+    local argsTable = java.luaify(args)
+
+    -- Handle quit subcommand
+    if #argsTable > 0 and argsTable[1] == "quit" then
+        local game = findPlayerGame(player:getName())
+
+        if not game then
+            player:sendRichMessage("<red>You're not in an egg fight!</red>")
+            return
+        end
+
+        if game.state == "COUNTDOWN" then
+            -- Remove from countdown
+            local newParticipants = {}
+            for _, name in ipairs(game.participants) do
+                if name ~= player:getName() then
+                    table.insert(newParticipants, name)
+                end
+            end
+            game.participants = newParticipants
+
+            -- Restore player state
+            if minigame.restorePlayerState("eggfight", player) then
+                player:sendRichMessage(
+                    "<green>You've left the egg fight and been returned to your original location!</green>")
+                utils.broadcastMessage("<gray>" ..
+                    player:getName() .. " left the egg fight. <gray>(" .. #game.participants .. " players)")
+            else
+                player:sendRichMessage("<red>Failed to restore your state!</red>")
+            end
+
+            -- Cancel game if no one left
+            if #game.participants == 0 then
+                game.state = "FINISHED"
+                removeFinishedGames()
+            end
+        elseif game.state == "ACTIVE" then
+            -- Eliminate from active game
+            if game.activePlayers[player:getName()] then
+                eliminatePlayer(game, player:getName())
+                player:sendRichMessage("<green>You've left the egg fight!</green>")
+            else
+                player:sendRichMessage("<red>You're already eliminated!</red>")
+            end
+        end
+
+        return
+    end
+
     script.logger:info(player:getName() .. " used /eggfight command")
     local existingGame = findPlayerGame(player:getName())
 
@@ -467,7 +518,20 @@ script:registerCommand(function(sender, args)
 end, {
     name = "eggfight",
     description = "Start or join an egg fight battle",
-    usage = "/eggfight"
+    usage = "/eggfight [quit]",
+    aliases = { "ef" },
+    tabComplete = function(sender, args)
+        local argsTable = java.luaify(args)
+        if #argsTable == 0 then
+            return { "quit" }
+        elseif #argsTable == 1 then
+            local partial = argsTable[1]
+            if string.sub("quit", 1, #partial) == partial then
+                return { "quit" }
+            end
+        end
+        return {}
+    end
 })
 
 -- Event listeners
@@ -519,6 +583,9 @@ script:registerListener("org.bukkit.event.player.PlayerQuitEvent", function(even
 
     if game ~= nil then
         if game.state == "COUNTDOWN" then
+            -- Restore player state when they quit during countdown
+            minigame.restorePlayerState("eggfight", player)
+
             local newParticipants = {}
             for _, name in ipairs(game.participants) do
                 if name ~= player:getName() then
@@ -540,7 +607,7 @@ end)
 script:onLoad(function()
     script.logger:info("EggFight plugin loaded!")
     script.logger:info("Command: /eggfight")
-    script.logger:info("States stored in: " .. getStateDir():getAbsolutePath())
+    script.logger:info("States stored in: " .. minigame.getStateDir("eggfight"):getAbsolutePath())
 end)
 
 script:onUnload(function()
