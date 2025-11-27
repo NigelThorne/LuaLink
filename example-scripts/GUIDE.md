@@ -310,23 +310,37 @@ minigame.getStateFile(minigameName, uuid) -- Get state file
 
 ### 1. Item Serialization (Modern Minecraft)
 
-**PROBLEM:** Modern Minecraft (1.20.5+) uses components, not NBT. `ItemStack:serialize()` can fail.
+**PROBLEM:** Modern Minecraft (1.20.5+) uses components, not NBT. `ItemStack:serialize()` and `ItemStack:deserialize()` don't work reliably.
 
-**SOLUTION:** Always wrap in pcall():
+**SOLUTION:** Use byte serialization with Base64 encoding:
 
 ```lua
+local Base64 = import("java.util.Base64")
+
+-- Saving items
 local success, serialized = pcall(function()
-    return item:serialize()
+    local bytes = item:serializeAsBytes()
+    return Base64:getEncoder():encodeToString(bytes)
 end)
 
 if success and serialized ~= nil then
     config:set("items." .. slot, serialized)
-else
-    script.logger:warning("Failed to serialize item in slot " .. slot)
+end
+
+-- Loading items
+local base64Data = config:getString("items." .. slot)
+if base64Data ~= nil then
+    local success, item = pcall(function()
+        local bytes = Base64:getDecoder():decode(base64Data)
+        return ItemStack:deserializeBytes(bytes)
+    end)
+    if success and item ~= nil then
+        inventory:setItem(slot, item)
+    end
 end
 ```
 
-The minigame helper already does this for you.
+The minigame helper (v1.1+) already does this for you.
 
 ### 2. Block Operations
 

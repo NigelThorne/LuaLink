@@ -1,6 +1,8 @@
--- Minigame Helper Module
+-- Minigame Helper Module v1.1
 -- Provides utilities for saving/restoring player state when entering/leaving minigames
 -- Usage: local minigame = require("common.minigame")
+--
+-- v1.1: Fixed item serialization for modern Minecraft 1.20.5+ using Base64 byte encoding
 
 local M = {}
 
@@ -11,6 +13,7 @@ local Location = import("org.bukkit.Location")
 local GameMode = import("org.bukkit.GameMode")
 local Material = import("org.bukkit.Material")
 local Vector = import("org.bukkit.util.Vector")
+local Base64 = import("java.util.Base64")
 
 -- Get state data directory for a minigame
 -- @param minigameName string Name of the minigame (e.g., "eggfight", "spleef")
@@ -51,14 +54,15 @@ function M.savePlayerState(minigameName, player)
     config:set("yaw", loc:getYaw())
     config:set("pitch", loc:getPitch())
 
-    -- Inventory - using Bukkit serialization with error handling
+    -- Inventory - using byte serialization for modern Minecraft compatibility
     local inventory = player:getInventory()
     local itemsSaved = 0
     for i = 0, inventory:getSize() - 1 do
         local item = inventory:getItem(i)
         if item ~= nil and item:getType() ~= Material.AIR then
             local success, serialized = pcall(function()
-                return item:serialize()
+                local bytes = item:serializeAsBytes()
+                return Base64:getEncoder():encodeToString(bytes)
             end)
             if success and serialized ~= nil then
                 config:set("items." .. i, serialized)
@@ -119,10 +123,11 @@ function M.restorePlayerState(minigameName, player)
             for _, key in ipairs(keys) do
                 local slot = tonumber(key)
                 if slot ~= nil then
-                    local itemData = itemsSection:getConfigurationSection(key)
-                    if itemData ~= nil then
+                    local base64Data = itemsSection:getString(key)
+                    if base64Data ~= nil then
                         local itemSuccess, item = pcall(function()
-                            return ItemStack:deserialize(itemData:getValues(true))
+                            local bytes = Base64:getDecoder():decode(base64Data)
+                            return ItemStack:deserializeBytes(bytes)
                         end)
                         if itemSuccess and item ~= nil then
                             inventory:setItem(slot, item)
