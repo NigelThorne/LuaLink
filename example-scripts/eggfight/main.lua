@@ -8,6 +8,7 @@ local File = import("java.io.File")
 local ItemStack = import("org.bukkit.inventory.ItemStack")
 local YamlConfiguration = import("org.bukkit.configuration.file.YamlConfiguration")
 local GameMode = import("org.bukkit.GameMode")
+local GameRule = import("org.bukkit.GameRule")
 local Player = import("org.bukkit.entity.Player")
 
 -- Load shared utilities
@@ -20,13 +21,12 @@ local ARENA_SPACING = 200
 local FALL_Y = 50
 local COUNTDOWN_SECONDS = 5
 
--- Block decay configuration
+-- Block decay configuration (store names as strings, not Material objects)
 local DECAY_STAGES = {
-    { material = Material.WHITE_WOOL,      health = 100 },
-    { material = Material.LIGHT_GRAY_WOOL, health = 75 },
-    { material = Material.GRAY_WOOL,       health = 50 },
-    { material = Material.DARK_GRAY_WOOL,  health = 25 },
-    { material = Material.BLACK_WOOL,      health = 10 }
+    { materialName = "WHITE_WOOL",      health = 100 },
+    { materialName = "LIGHT_GRAY_WOOL", health = 75 },
+    { materialName = "GRAY_WOOL",       health = 50 },
+    { materialName = "BLACK_WOOL",      health = 25 }
 }
 local DECAY_RATE_STANDING = 15 -- Health lost per tick when standing
 local DECAY_RATE_IDLE = 0      -- Health lost per tick when not standing (disabled)
@@ -61,7 +61,8 @@ local function buildWoolPlatform(world, centerX, centerZ, y, radius)
                 local blockZ = centerZ + z
                 local isGrey = (x + z) % 2 == 0
                 local material = isGrey and Material.LIGHT_GRAY_WOOL or Material.WHITE_WOOL
-                world:getBlockAt(blockX, y, blockZ):setType(material)
+                local block = world:getBlockAt(blockX, y, blockZ)
+                block:setBlockData(material:createBlockData())
             end
         end
     end
@@ -87,7 +88,8 @@ local function buildRainbowArch(world, centerX, centerZ, y, radius)
 
         -- Build along Z axis
         for zOffset = -3, 3 do
-            world:getBlockAt(centerX + x, y + heightOffset, centerZ + zOffset):setType(material)
+            local block = world:getBlockAt(centerX + x, y + heightOffset, centerZ + zOffset)
+            block:setBlockData(material:createBlockData())
         end
     end
 end
@@ -110,7 +112,7 @@ local function createArena(playerCount)
 
         -- Set to day and disable day/night cycle
         world:setTime(1000)
-        world:setGameRule("doDaylightCycle", false)
+        world:setGameRule(GameRule.DO_DAYLIGHT_CYCLE, false)
 
         -- Clear weather and keep it clear
         world:setStorm(false)
@@ -213,15 +215,22 @@ local function updateBlockAppearance(world, x, y, z, health)
     -- Find appropriate stage based on health
     for _, stage in ipairs(DECAY_STAGES) do
         if health >= stage.health then
-            if block:getType() ~= stage.material then
-                block:setType(stage.material)
+            local material = Material:getMaterial(stage.materialName)
+
+            if material == nil then
+                script.logger:warning(string.format("Could not find material: %s", stage.materialName))
+                return
+            end
+
+            if block:getType() ~= material then
+                block:setBlockData(material:createBlockData())
             end
             return
         end
     end
 
     -- Health is below minimum, destroy block
-    block:setType(Material.AIR)
+    block:setBlockData(Material.AIR:createBlockData())
 end
 
 local function startBlockDecay(game)
@@ -564,7 +573,7 @@ script:registerListener("org.bukkit.event.entity.ProjectileHitEvent", function(e
     if hitBlock ~= nil then
         local blockType = hitBlock:getType():toString()
         if blockType:match("WOOL") then
-            hitBlock:setType(Material.AIR)
+            hitBlock:setBlockData(Material.AIR:createBlockData())
         end
     end
 end)

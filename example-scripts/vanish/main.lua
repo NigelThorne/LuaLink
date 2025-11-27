@@ -7,17 +7,8 @@ local PotionEffect = import("org.bukkit.potion.PotionEffect")
 local PotionEffectType = import("org.bukkit.potion.PotionEffectType")
 local Player = import("org.bukkit.entity.Player")
 
--- Load shared utilities directly
-local function loadUtils()
-    local pluginDataFolder = server:getPluginManager():getPlugin("LuaLink"):getDataFolder()
-    local utilsFile = File(pluginDataFolder, "scripts/common/utils.lua")
-    local luaState = script:getLuaState()
-    luaState:loadFile(utilsFile:getAbsolutePath())
-    luaState:pCall(0, 1)
-    return luaState:get(-1)
-end
-
-local utils = loadUtils()
+-- Load shared utilities
+local utils = require("common.utils")
 
 -- Track vanished players in memory
 local vanishedPlayers = {}

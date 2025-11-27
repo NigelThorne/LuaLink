@@ -14,6 +14,12 @@ local File = import("java.io.File")
 local ItemStack = import("org.bukkit.inventory.ItemStack")
 local Player = import("org.bukkit.entity.Player")
 
+-- FAWE imports for async world clearing
+local BukkitAdapter = import("com.sk89q.worldedit.bukkit.BukkitAdapter")
+local CuboidRegion = import("com.sk89q.worldedit.regions.CuboidRegion")
+local BlockVector3 = import("com.sk89q.worldedit.math.BlockVector3")
+local BlockTypes = import("com.sk89q.worldedit.world.block.BlockTypes")
+
 -- Load minigame helper
 local minigame = require("common.minigame")
 
@@ -168,32 +174,46 @@ script:registerCommand(function(sender, args)
                 end
             end
 
-            -- Clear the world
+            -- Clear the world using FAWE async
             if world ~= nil then
-                local clearRadius = 100
-                local clearHeight = 128
+                scheduler:runAsync(function()
+                    -- Convert Bukkit world to WorldEdit world
+                    local weWorld = BukkitAdapter:adapt(world)
+                    local editSession = weWorld:getEditSession()
 
-                for x = -clearRadius, clearRadius do
-                    for z = -clearRadius, clearRadius do
-                        for y = 0, clearHeight do
-                            world:getBlockAt(x, y, z):setType(Material.AIR)
+                    -- Define a large region to clear (500x500x256)
+                    local pos1 = BlockVector3:at(-250, -64, -250)
+                    local pos2 = BlockVector3:at(250, 319, 250)
+                    local region = CuboidRegion(weWorld, pos1, pos2)
+
+                    -- Replace all non-air blocks with air
+                    editSession:replaceBlocks(region, BlockTypes.AIR:getDefaultState(),
+                        BlockTypes.AIR:getDefaultState():toBaseBlock(), false)
+                    editSession:close()
+
+                    script.logger:info(string.format("Cleared skyblock world for %s", player:getName()))
+
+                    -- Create the starting island on main thread
+                    scheduler:run(function()
+                        createStartingIsland(world, 0, 0)
+                        script.logger:info(string.format("Reset skyblock world for %s", player:getName()))
+
+                        pendingResets[uuid] = nil
+                        pendingDeletions[uuid] = nil
+
+                        if player:isOnline() then
+                            player:sendRichMessage("<green>✓ Your skyblock world has been reset!</green>")
+                            player:sendRichMessage("<gray>Your Skyblock is ready. Run /sb to go there.</gray>")
+                            player:playSound(player:getLocation(), "entity.generic.explode", 0.5, 1.0)
                         end
-                    end
-                end
-
-                createStartingIsland(world, 0, 0)
-                script.logger:info(string.format("Reset skyblock world for %s", player:getName()))
+                    end)
+                end)
             end
 
             -- Delete skyblock state file
             minigame.deletePlayerState("skyblock_sb", uuid)
 
-            pendingResets[uuid] = nil
-            pendingDeletions[uuid] = nil
-
-            player:sendRichMessage("<green>✓ Your skyblock world has been reset!</green>")
-            player:sendRichMessage("<gray>Use /skyblock to return to your fresh island</gray>")
-            player:playSound(player:getLocation(), "entity.generic.explode", 0.5, 1.0)
+            -- Note: completion message is sent after async operation completes
             return
         else
             -- First confirmation
