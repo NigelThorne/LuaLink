@@ -1,0 +1,9 @@
+{
+    "repositories": {
+        "MavenCentral": "https://maven-central.storage.googleapis.com/maven2/"
+    },
+    "dependencies": [
+        "org.rauschig:jarchivelib:1.2.0",
+        "org.tukaani:xz:1.10"
+    ]
+}

@@ -3,14 +3,11 @@
 
 -- Imports
 local File = import("java.io.File")
-local FileInputStream = import("java.io.FileInputStream")
-local FileOutputStream = import("java.io.FileOutputStream")
-local ZipOutputStream = import("java.util.zip.ZipOutputStream")
-local ZipEntry = import("java.util.zip.ZipEntry")
 local YamlConfiguration = import("org.bukkit.configuration.file.YamlConfiguration")
-local FileChannel = import("java.nio.channels.FileChannel")
-local ByteBuffer = import("java.nio.ByteBuffer")
-local StandardOpenOption = import("java.nio.file.StandardOpenOption")
+local ArchiveFormat = import("org.rauschig.jarchivelib.ArchiveFormat")
+local ArchiverFactory = import("org.rauschig.jarchivelib.ArchiverFactory")
+local CompressionType = import("org.rauschig.jarchivelib.CompressionType")
+local Bukkit = import("org.bukkit.Bukkit")
 
 -- Module requires
 local utils = require("common.utils")
@@ -21,6 +18,9 @@ local DEFAULT_INTERVAL_HOURS = 1
 local DEFAULT_HOURLY_KEEP = 10
 local DEFAULT_DAILY_KEEP = 7
 local DEFAULT_MONTHLY_KEEP = 12
+
+-- Create archiver for tar.xz compression
+local ARCHIVER = ArchiverFactory:createArchiver(ArchiveFormat.TAR, CompressionType.XZ)
 
 -- State
 local backupTask = nil
@@ -74,8 +74,8 @@ end
 
 
 local function parseBackupTimestamp(filename)
-    -- Format: backup_YYYY-MM-DD_HH-MM-SS
-    local year, month, day, hour, min, sec = filename:match("backup_(%d+)%-(%d+)%-(%d+)_(%d+)%-(%d+)%-(%d+)$")
+    -- Format: backup_YYYY-MM-DD_HH-MM-SS.tar.xz
+    local year, month, day, hour, min, sec = filename:match("backup_(%d+)%-(%d+)%-(%d+)_(%d+)%-(%d+)%-(%d+)%.tar%.xz$")
 
     if not year then
         return nil
@@ -103,7 +103,7 @@ local function getBackupList()
     local backups = {}
     local filesTable = java.luaify(files)
     for _, file in ipairs(filesTable) do
-        if file:isDirectory() and file:getName():match("^backup_") then
+        if file:isFile() and file:getName():match("^backup_.*%.tar%.xz$") then
             local timestamp = parseBackupTimestamp(file:getName())
             if timestamp then
                 timestamp.file = file
@@ -172,7 +172,7 @@ local function cleanupOldBackups()
     for _, backup in ipairs(backups) do
         if not toKeep[backup.filename] then
             local success, err = pcall(function()
-                deleteDirectory(backup.file)
+                backup.file:delete()
             end)
 
             if success then
@@ -210,11 +210,11 @@ local function createBackup()
 
     -- Create backup directory
     local backupDir = getBackupDir()
-    local backupFolder = File(backupDir, backupName)
-    backupFolder:mkdirs()
+    local backupDirPath = backupDir:getAbsolutePath()
 
     -- Find all world folders in server directory (including unloaded worlds)
     local serverDir = File("."):getAbsoluteFile():getParentFile()
+    local serverDirPath = serverDir:getAbsolutePath()
     local serverFiles = serverDir:listFiles()
     local worldFolders = {}
 
@@ -225,11 +225,10 @@ local function createBackup()
                 local dirName = file:getName()
                 -- Check if this looks like a world folder
                 local levelDat = File(file, "level.dat")
-                local regionFolder = File(file, "region")
 
                 -- It's a world if it has level.dat or is a dimension folder pattern
                 if levelDat:exists() or dirName:match("_nether$") or dirName:match("_the_end$") then
-                    table.insert(worldFolders, dirName)
+                    table.insert(worldFolders, file)
                 end
             end
         end
@@ -237,44 +236,34 @@ local function createBackup()
 
     script.logger:info("Found " .. #worldFolders .. " world folders to backup")
 
-    -- Copy all world folders
-    for _, worldName in ipairs(worldFolders) do
-        local sourceWorld = File(serverDir, worldName)
-        local destWorld = File(backupFolder, worldName)
+    -- Create compressed archive using jarchivelib
+    script.logger:info("Creating compressed backup...")
 
-        script.logger:info("Copying world: " .. worldName)
+    local archivePath = backupDirPath .. "/" .. backupName .. ".tar.xz"
+    local archiveFile = File(archivePath)
 
-        local success, err = pcall(function()
-            copyDirectory(sourceWorld, destWorld)
+    local success, err = pcall(function()
+        synchronized(function()
+            -- Create archive with all world folders
+            -- Pass lua table directly - LuaLink should handle varargs conversion
+            ARCHIVER:create(archiveFile:getName(), File(backupDirPath), table.unpack(worldFolders))
         end)
+    end)
 
-        if not success then
-            script.logger:severe("Failed to copy world " .. worldName .. ": " .. tostring(err))
-            utils.broadcastMessage("<red>Backup failed! Check console.</red>")
-            return false
+    if not success then
+        script.logger:severe("Failed to create backup archive: " .. tostring(err))
+        local onlinePlayers = java.luaify(server:getOnlinePlayers():toArray())
+        for _, player in ipairs(onlinePlayers) do
+            if player:isOp() then
+                player:sendRichMessage("<red>Backup failed! Check console.</red>")
+            end
         end
+        return false
     end
 
     -- Calculate backup size
-    local function getDirectorySize(dir)
-        local size = 0
-        local files = dir:listFiles()
-        if files ~= nil then
-            local filesTable = java.luaify(files)
-            for _, file in ipairs(filesTable) do
-                if file:isDirectory() then
-                    size = size + getDirectorySize(file)
-                else
-                    size = size + file:length()
-                end
-            end
-        end
-        return size
-    end
-
-    local sizeBytes = getDirectorySize(backupFolder)
-    local sizeMB = math.floor(sizeBytes / 1024 / 1024 * 10) / 10
-    script.logger:info("Backup complete: " .. backupName .. " (" .. sizeMB .. " MB)")
+    local sizeMB = math.floor(archiveFile:length() / 1024 / 1024 * 10) / 10
+    script.logger:info("Backup complete: " .. backupName .. ".tar.xz (" .. sizeMB .. " MB)")
 
     local onlinePlayers = java.luaify(server:getOnlinePlayers():toArray())
     for _, player in ipairs(onlinePlayers) do
@@ -443,24 +432,7 @@ script:registerCommand(function(sender, args)
     sender:sendRichMessage("<gold><bold>Available Backups:</bold></gold>")
 
     for i, backup in ipairs(backups) do
-        -- Calculate directory size
-        local function getDirectorySize(dir)
-            local size = 0
-            local files = dir:listFiles()
-            if files ~= nil then
-                local filesTable = java.luaify(files)
-                for _, file in ipairs(filesTable) do
-                    if file:isDirectory() then
-                        size = size + getDirectorySize(file)
-                    else
-                        size = size + file:length()
-                    end
-                end
-            end
-            return size
-        end
-
-        local size = getDirectorySize(backup.file)
+        local size = backup.file:length()
         local sizeMB = math.floor(size / 1024 / 1024 * 10) / 10
         local dateStr = string.format("%04d-%02d-%02d %02d:%02d:%02d",
             backup.year, backup.month, backup.day, backup.hour, backup.min, backup.sec)
