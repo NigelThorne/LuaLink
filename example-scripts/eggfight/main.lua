@@ -8,6 +8,7 @@ local File = import("java.io.File")
 local ItemStack = import("org.bukkit.inventory.ItemStack")
 local YamlConfiguration = import("org.bukkit.configuration.file.YamlConfiguration")
 local GameMode = import("org.bukkit.GameMode")
+local Player = import("org.bukkit.entity.Player")
 
 -- Load shared utilities
 local utils = require("common.utils")
@@ -275,16 +276,16 @@ end
 
 
 local function startGame(game)
-    script.logger:info("Starting egg fight game with " .. #game.participants .. " participants")
+    script.logger:info(string.format("Starting egg fight game with %d participants", #game.participants))
     game.state = "ACTIVE"
     game.arena = createArena(#game.participants)
-    script.logger:info("Arena created at X=" .. game.arena.centerX .. " Y=" .. game.arena.platformY)
+    script.logger:info(string.format("Arena created at X=%d Y=%d", game.arena.centerX, game.arena.platformY))
 
     local spawnY = game.arena.platformY + 1
     local spawnRadius = math.floor(game.arena.radius * 0.7)
 
     for i, playerName in ipairs(game.participants) do
-        script.logger:info("Teleporting player: " .. playerName)
+        script.logger:info(string.format("Teleporting player: %s", playerName))
         local player = server:getPlayer(playerName)
         if player ~= nil then
             minigame.savePlayerState("eggfight", player)
@@ -295,7 +296,7 @@ local function startGame(game)
             local spawnZ = game.arena.centerZ + math.floor(spawnRadius * math.sin(rad))
 
             local location = Location(game.arena.world, spawnX + 0.5, spawnY, spawnZ + 0.5)
-            script.logger:info("Teleporting " .. playerName .. " to " .. spawnX .. "," .. spawnY .. "," .. spawnZ)
+            script.logger:info(string.format("Teleporting %s to %d,%d,%d", playerName, spawnX, spawnY, spawnZ))
             player:teleport(location)
             player:setGameMode(GameMode.SURVIVAL)
             player:setAllowFlight(false)
@@ -343,7 +344,7 @@ function endGame(game, winnerName)
     game.state = "FINISHED"
 
     if winnerName then
-        utils.broadcastMessage("<gold><bold>✨ " .. winnerName .. " wins the Egg Fight! ✨</bold>")
+        utils.broadcastMessage(string.format("<gold><bold>%s wins the Egg Fight!", winnerName))
     else
         utils.broadcastMessage("<gold><bold>Egg Fight ended with no winner!</bold>")
     end
@@ -376,10 +377,11 @@ end
 
 -- Command handler
 script:registerCommand(function(sender, args)
-    if not sender:getClass():getName():match("CraftPlayer") then
+    if not Player.class:isInstance(sender) then
         sender:sendRichMessage("<red>Only players can start an egg fight!</red>")
         return
     end
+    ---@cast sender org.bukkit.entity.Player
 
     local player = sender
 
@@ -409,8 +411,9 @@ script:registerCommand(function(sender, args)
             if minigame.restorePlayerState("eggfight", player) then
                 player:sendRichMessage(
                     "<green>You've left the egg fight and been returned to your original location!</green>")
-                utils.broadcastMessage("<gray>" ..
-                    player:getName() .. " left the egg fight. <gray>(" .. #game.participants .. " players)")
+                utils.broadcastMessage(string.format(
+                    "<gray>%s left the egg fight. <gray>(%d players)",
+                    player:getName(), #game.participants))
             else
                 player:sendRichMessage("<red>Failed to restore your state!</red>")
             end
@@ -433,12 +436,12 @@ script:registerCommand(function(sender, args)
         return
     end
 
-    script.logger:info(player:getName() .. " used /eggfight command")
+    script.logger:info(string.format("%s used /eggfight command", player:getName()))
     local existingGame = findPlayerGame(player:getName())
 
     if existingGame then
-        script.logger:info(player:getName() ..
-            " is already in game " .. existingGame.id .. " with state " .. existingGame.state)
+        script.logger:info(string.format("%s is already in game %s with state %s",
+            player:getName(), existingGame.id, existingGame.state))
         if existingGame.state == "COUNTDOWN" then
             player:sendRichMessage("<yellow>You're already in the egg fight!</yellow>")
         else
@@ -447,7 +450,7 @@ script:registerCommand(function(sender, args)
         return
     end
 
-    script.logger:info(player:getName() .. " is not in any game, proceeding...")
+    script.logger:info(string.format("%s is not in any game, proceeding...", player:getName()))
 
     local pendingGame = nil
     for _, game in ipairs(games) do

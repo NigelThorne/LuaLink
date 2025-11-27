@@ -12,6 +12,7 @@ local Location = import("org.bukkit.Location")
 local WorldType = import("org.bukkit.WorldType")
 local File = import("java.io.File")
 local ItemStack = import("org.bukkit.inventory.ItemStack")
+local Player = import("org.bukkit.entity.Player")
 
 -- Load minigame helper
 local minigame = require("common.minigame")
@@ -99,7 +100,7 @@ local function getOrCreateSkyblockWorld(player)
     local world = Bukkit:getWorld(worldName)
 
     if world == nil then
-        script.logger:info("Creating new skyblock world for " .. player:getName())
+        script.logger:info(string.format("Creating new skyblock world for %s", player:getName()))
 
         local creator = WorldCreator(worldName)
         creator:type(WorldType.FLAT)
@@ -113,9 +114,9 @@ local function getOrCreateSkyblockWorld(player)
             world:setKeepSpawnInMemory(false)
 
             createStartingIsland(world, 0, 0)
-            script.logger:info("Created starting island for " .. player:getName())
+            script.logger:info(string.format("Created starting island for %s", player:getName()))
         else
-            script.logger:warning("Failed to create skyblock world for " .. player:getName())
+            script.logger:warning(string.format("Failed to create skyblock world for %s", player:getName()))
         end
     end
 
@@ -124,10 +125,11 @@ end
 
 -- /skyblock command
 script:registerCommand(function(sender, args)
-    if not sender:getClass():getName():match("CraftPlayer") then
+    if not Player.class:isInstance(sender) then
         sender:sendRichMessage("<red>Only players can use this command!</red>")
         return
     end
+    ---@cast sender org.bukkit.entity.Player
 
     local player = sender
     local uuid = player:getUniqueId():toString():gsub("-", "_")
@@ -150,7 +152,7 @@ script:registerCommand(function(sender, args)
             scheduler:runDelayed(function()
                 if pendingDeletions[uuid] then
                     pendingDeletions[uuid] = nil
-                    script.logger:warning("Cleared stale deletion flag for " .. player:getName())
+                    script.logger:warning(string.format("Cleared stale deletion flag for %s", player:getName()))
                 end
             end, 100)
 
@@ -180,7 +182,7 @@ script:registerCommand(function(sender, args)
                 end
 
                 createStartingIsland(world, 0, 0)
-                script.logger:info("Reset skyblock world for " .. player:getName())
+                script.logger:info(string.format("Reset skyblock world for %s", player:getName()))
             end
 
             -- Delete skyblock state file
@@ -240,7 +242,7 @@ script:registerCommand(function(sender, args)
         player:sendRichMessage("<gray>Use /skyblock reset to reset your world</gray>")
         player:playSound(player:getLocation(), "entity.enderman.teleport", 1.0, 1.0)
 
-        script.logger:info(player:getName() .. " teleported to their skyblock world")
+        script.logger:info(string.format("%s teleported to their skyblock world", player:getName()))
     else
         player:sendRichMessage("<red>Failed to load your skyblock world!</red>")
     end
@@ -254,10 +256,11 @@ end, {
 
 -- /play command
 script:registerCommand(function(sender, args)
-    if not sender:getClass():getName():match("CraftPlayer") then
+    if not Player.class:isInstance(sender) then
         sender:sendRichMessage("<red>Only players can use this command!</red>")
         return
     end
+    ---@cast sender org.bukkit.entity.Player
 
     local player = sender
     local uuid = player:getUniqueId():toString():gsub("-", "_")
@@ -294,7 +297,7 @@ script:registerCommand(function(sender, args)
     player:sendRichMessage("<green>✨ Welcome back to the main world!</green>")
     player:playSound(player:getLocation(), "entity.enderman.teleport", 1.0, 1.0)
 
-    script.logger:info(player:getName() .. " returned to the main world")
+    script.logger:info(string.format("%s returned to the main world", player:getName()))
 end, {
     name = "play",
     permission = "scripts.command.play",

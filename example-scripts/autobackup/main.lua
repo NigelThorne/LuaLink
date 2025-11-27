@@ -51,8 +51,8 @@ local function loadConfig()
     config.dailyKeep = cfg:getInt("retention.daily", DEFAULT_DAILY_KEEP)
     config.monthlyKeep = cfg:getInt("retention.monthly", DEFAULT_MONTHLY_KEEP)
 
-    script.logger:info("Loaded config: interval=" .. config.intervalHours .. "h, retention=" ..
-        config.hourlyKeep .. "h/" .. config.dailyKeep .. "d/" .. config.monthlyKeep .. "m")
+    script.logger:info(string.format("Loaded config: interval=%dh, retention=%dh/%dd/%dm",
+        config.intervalHours, config.hourlyKeep, config.dailyKeep, config.monthlyKeep))
 end
 
 local function saveDefaultConfig()
@@ -131,7 +131,7 @@ local function cleanupOldBackups()
     local seenDays = {}
     local seenMonths = {}
 
-    script.logger:info("Running backup cleanup, found " .. #backups .. " backups")
+    script.logger:info(string.format("Running backup cleanup, found %d backups", #backups))
 
     -- First pass: Keep last N hourly backups
     for i = 1, math.min(#backups, config.hourlyKeep) do
@@ -177,14 +177,14 @@ local function cleanupOldBackups()
 
             if success then
                 deleted = deleted + 1
-                script.logger:info("Deleted old backup: " .. backup.filename)
+                script.logger:info(string.format("Deleted old backup: %s", backup.filename))
             else
-                script.logger:warning("Failed to delete " .. backup.filename .. ": " .. tostring(err))
+                script.logger:warning(string.format("Failed to delete %s: %s", backup.filename, tostring(err)))
             end
         end
     end
 
-    script.logger:info("Cleanup complete: kept " .. #utils.keys(toKeep) .. ", deleted " .. deleted)
+    script.logger:info(string.format("Cleanup complete: kept %d, deleted %d", #utils.keys(toKeep), deleted))
 end
 
 local function createBackup()
@@ -200,7 +200,7 @@ local function createBackup()
 
     local loadedWorlds = java.luaify(server:getWorlds():toArray())
     for _, world in ipairs(loadedWorlds) do
-        script.logger:info("Saving world: " .. world:getName())
+        script.logger:info(string.format("Saving world: %s", world:getName()))
         world:save()
     end
 
@@ -234,12 +234,12 @@ local function createBackup()
         end
     end
 
-    script.logger:info("Found " .. #worldFolders .. " world folders to backup")
+    script.logger:info(string.format("Found %d world folders to backup", #worldFolders))
 
     -- Create compressed archive using jarchivelib
     script.logger:info("Creating compressed backup...")
 
-    local archivePath = backupDirPath .. "/" .. backupName .. ".tar.xz"
+    local archivePath = string.format("%s/%s.tar.xz", backupDirPath, backupName)
     local archiveFile = File(archivePath)
 
     local success, err = pcall(function()
@@ -263,12 +263,12 @@ local function createBackup()
 
     -- Calculate backup size
     local sizeMB = math.floor(archiveFile:length() / 1024 / 1024 * 10) / 10
-    script.logger:info("Backup complete: " .. backupName .. ".tar.xz (" .. sizeMB .. " MB)")
+    script.logger:info(string.format("Backup complete: %s.tar.xz (%.1f MB)", backupName, sizeMB))
 
     local onlinePlayers = java.luaify(server:getOnlinePlayers():toArray())
     for _, player in ipairs(onlinePlayers) do
         if player:isOp() then
-            player:sendRichMessage("<green>Backup complete! (" .. sizeMB .. " MB)</green>")
+            player:sendRichMessage(string.format("<green>Backup complete! (%.1f MB)</green>", sizeMB))
         end
     end
 
@@ -437,8 +437,9 @@ script:registerCommand(function(sender, args)
         local dateStr = string.format("%04d-%02d-%02d %02d:%02d:%02d",
             backup.year, backup.month, backup.day, backup.hour, backup.min, backup.sec)
 
-        sender:sendRichMessage("<gray>" ..
-            i .. ".</gray> <white>" .. dateStr .. "</white> <gray>(" .. sizeMB .. " MB)</gray>")
+        sender:sendRichMessage(string.format(
+            "<gray>%d.</gray> <white>%s</white> <gray>(%.1f MB)</gray>",
+            i, dateStr, sizeMB))
     end
 end, {
     name = "backups",
@@ -488,7 +489,7 @@ script:onLoad(function()
         createBackup()
     end, intervalTicks, intervalTicks)
 
-    script.logger:info("Scheduled backups every " .. config.intervalHours .. " hour(s)")
+    script.logger:info(string.format("Scheduled backups every %d hour(s)", config.intervalHours))
 end)
 
 script:onUnload(function()

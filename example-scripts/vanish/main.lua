@@ -5,6 +5,7 @@ local File = import("java.io.File")
 local YamlConfiguration = import("org.bukkit.configuration.file.YamlConfiguration")
 local PotionEffect = import("org.bukkit.potion.PotionEffect")
 local PotionEffectType = import("org.bukkit.potion.PotionEffectType")
+local Player = import("org.bukkit.entity.Player")
 
 -- Load shared utilities directly
 local function loadUtils()
@@ -42,7 +43,7 @@ local function saveVanishState(player, isVanished)
     config:set("lastUpdate", tostring(os.time()))
 
     config:save(file)
-    script.logger:info("Saved vanish state for " .. player:getName() .. ": " .. tostring(isVanished))
+    script.logger:info(string.format("Saved vanish state for %s: %s", player:getName(), tostring(isVanished)))
 end
 
 -- Load vanish state
@@ -88,7 +89,7 @@ local function applyVanish(player)
     player:addPotionEffect(invisEffect)
 
     player:sendRichMessage("<gray>You are now <bold>vanished</bold>")
-    script.logger:info(playerName .. " is now vanished")
+    script.logger:info(string.format("%s is now vanished", playerName))
 end
 
 -- Remove vanish effect from player
@@ -108,7 +109,7 @@ local function removeVanish(player)
     player:removePotionEffect(PotionEffectType.INVISIBILITY)
 
     player:sendRichMessage("<gray>You are now <bold>visible</bold>")
-    script.logger:info(playerName .. " is now visible")
+    script.logger:info(string.format("%s is now visible", playerName))
 end
 
 -- Check if player is vanished
@@ -118,10 +119,11 @@ end
 
 -- /vanish command
 script:registerCommand(function(sender, args)
-    if not sender:getClass():getName():match("CraftPlayer") then
+    if not Player.class:isInstance(sender) then
         sender:sendRichMessage("<red>Only players can use this command!</red>")
         return
     end
+    ---@cast sender org.bukkit.entity.Player
 
     local player = sender
 
@@ -196,7 +198,7 @@ end)
 script:onLoad(function()
     script.logger:info("Vanish plugin loaded!")
     script.logger:info("Commands: /vanish or /v")
-    script.logger:info("Vanish states stored in: " .. getVanishDir():getAbsolutePath())
+    script.logger:info(string.format("Vanish states stored in: %s", getVanishDir():getAbsolutePath()))
 end)
 
 script:onUnload(function()
