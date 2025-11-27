@@ -9,6 +9,8 @@ local ArchiverFactory = import("org.rauschig.jarchivelib.ArchiverFactory")
 local CompressionType = import("org.rauschig.jarchivelib.CompressionType")
 local Bukkit = import("org.bukkit.Bukkit")
 
+
+
 -- Module requires
 local utils = require("common.utils")
 
@@ -190,16 +192,21 @@ end
 local function createBackup()
     script.logger:info("Starting backup process...")
 
-    -- Save all loaded worlds
-    local onlinePlayers = java.luaify(server:getOnlinePlayers():toArray())
-    for _, player in ipairs(onlinePlayers) do
-        if player:isOp() then
-            player:sendRichMessage("<yellow>Starting world backup...</yellow>")
+    -- Save all loaded worlds and notify ops
+    local worlds = server:getWorlds()
+    for i = 0, worlds:size() - 1 do
+        local world = worlds:get(i)
+        local players = world:getPlayers()
+        for j = 0, players:size() - 1 do
+            local player = players:get(j)
+            if player:isOp() then
+                player:sendRichMessage("<yellow>Starting world backup...</yellow>")
+            end
         end
     end
 
-    local loadedWorlds = java.luaify(server:getWorlds():toArray())
-    for _, world in ipairs(loadedWorlds) do
+    for i = 0, worlds:size() - 1 do
+        local world = worlds:get(i)
         script.logger:info(string.format("Saving world: %s", world:getName()))
         world:save()
     end
@@ -236,26 +243,44 @@ local function createBackup()
 
     script.logger:info(string.format("Found %d world folders to backup", #worldFolders))
 
+    -- Create temp directory to hold all worlds
+    local tempDir = File(backupDirPath, "temp_" .. backupName)
+    tempDir:mkdir()
+
+    -- Copy all world folders to temp directory
+    script.logger:info("Copying world folders to temp directory...")
+    for _, worldFolder in ipairs(worldFolders) do
+        local destFolder = File(tempDir, worldFolder:getName())
+        copyDirectory(worldFolder, destFolder)
+    end
+
     -- Create compressed archive using jarchivelib
-    script.logger:info("Creating compressed backup...")
+    script.logger:info("Creating compressed archive...")
 
     local archivePath = string.format("%s/%s.tar.xz", backupDirPath, backupName)
     local archiveFile = File(archivePath)
 
     local success, err = pcall(function()
         synchronized(function()
-            -- Create archive with all world folders
-            -- Pass lua table directly - LuaLink should handle varargs conversion
-            ARCHIVER:create(archiveFile:getName(), File(backupDirPath), table.unpack(worldFolders))
+            -- Create archive with single temp directory
+            ARCHIVER:create(backupName, File(backupDirPath), tempDir)
         end)
     end)
 
+    -- Clean up temp directory
+    deleteDirectory(tempDir)
+
     if not success then
         script.logger:severe("Failed to create backup archive: " .. tostring(err))
-        local onlinePlayers = java.luaify(server:getOnlinePlayers():toArray())
-        for _, player in ipairs(onlinePlayers) do
-            if player:isOp() then
-                player:sendRichMessage("<red>Backup failed! Check console.</red>")
+        local worlds = server:getWorlds()
+        for i = 0, worlds:size() - 1 do
+            local world = worlds:get(i)
+            local players = world:getPlayers()
+            for j = 0, players:size() - 1 do
+                local player = players:get(j)
+                if player:isOp() then
+                    player:sendRichMessage("<red>Backup failed! Check console.</red>")
+                end
             end
         end
         return false
@@ -265,10 +290,15 @@ local function createBackup()
     local sizeMB = math.floor(archiveFile:length() / 1024 / 1024 * 10) / 10
     script.logger:info(string.format("Backup complete: %s.tar.xz (%.1f MB)", backupName, sizeMB))
 
-    local onlinePlayers = java.luaify(server:getOnlinePlayers():toArray())
-    for _, player in ipairs(onlinePlayers) do
-        if player:isOp() then
-            player:sendRichMessage(string.format("<green>Backup complete! (%.1f MB)</green>", sizeMB))
+    local worlds = server:getWorlds()
+    for i = 0, worlds:size() - 1 do
+        local world = worlds:get(i)
+        local players = world:getPlayers()
+        for j = 0, players:size() - 1 do
+            local player = players:get(j)
+            if player:isOp() then
+                player:sendRichMessage(string.format("<green>Backup complete! (%.1f MB)</green>", sizeMB))
+            end
         end
     end
 
@@ -480,6 +510,7 @@ end, {
 script:onLoad(function()
     saveDefaultConfig()
     loadConfig()
+
 
     script.logger:info("AutoBackup plugin loaded")
 

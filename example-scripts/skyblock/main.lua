@@ -14,11 +14,7 @@ local File = import("java.io.File")
 local ItemStack = import("org.bukkit.inventory.ItemStack")
 local Player = import("org.bukkit.entity.Player")
 
--- FAWE imports for async world clearing
-local BukkitAdapter = import("com.sk89q.worldedit.bukkit.BukkitAdapter")
-local CuboidRegion = import("com.sk89q.worldedit.regions.CuboidRegion")
-local BlockVector3 = import("com.sk89q.worldedit.math.BlockVector3")
-local BlockTypes = import("com.sk89q.worldedit.world.block.BlockTypes")
+
 
 -- Load minigame helper
 local minigame = require("common.minigame")
@@ -106,7 +102,17 @@ local function getOrCreateSkyblockWorld(player)
     local world = Bukkit:getWorld(worldName)
 
     if world == nil then
-        script.logger:info(string.format("Creating new skyblock world for %s", player:getName()))
+        -- Check if world folder already exists on disk
+        local serverFolder = Bukkit:getWorldContainer()
+        local worldFolder = File(serverFolder, worldName)
+        local isNewWorld = not worldFolder:exists()
+
+        if isNewWorld then
+            player:sendRichMessage("<yellow>Creating your skyblock world...</yellow>")
+            script.logger:info(string.format("Creating new skyblock world for %s", player:getName()))
+        else
+            script.logger:info(string.format("Loading existing skyblock world for %s", player:getName()))
+        end
 
         local creator = WorldCreator(worldName)
         creator:type(WorldType.FLAT)
@@ -119,8 +125,12 @@ local function getOrCreateSkyblockWorld(player)
             world:setSpawnLocation(0, config.spawnY + 1, 0)
             world:setKeepSpawnInMemory(false)
 
-            createStartingIsland(world, 0, 0)
-            script.logger:info(string.format("Created starting island for %s", player:getName()))
+            -- Only create starting island for brand new worlds
+            if isNewWorld then
+                createStartingIsland(world, 0, 0)
+                player:sendRichMessage("<green>Your Skyblock is ready!</green>")
+                script.logger:info(string.format("Created starting island for %s", player:getName()))
+            end
         else
             script.logger:warning(string.format("Failed to create skyblock world for %s", player:getName()))
         end
@@ -162,8 +172,8 @@ script:registerCommand(function(sender, args)
                 end
             end, 100)
 
+            -- Teleport player out if they're in the skyblock world
             local isInSkyblock = world ~= nil and player:getWorld():getName() == worldName
-
             if isInSkyblock then
                 -- Save skyblock state before reset
                 minigame.savePlayerState("skyblock_sb", player)
@@ -174,46 +184,46 @@ script:registerCommand(function(sender, args)
                 end
             end
 
-            -- Clear the world using FAWE async
+            -- Delete the world
             if world ~= nil then
-                scheduler:runAsync(function()
-                    -- Convert Bukkit world to WorldEdit world
-                    local weWorld = BukkitAdapter:adapt(world)
-                    local editSession = weWorld:getEditSession()
+                -- Unload the world (save=false since we're deleting it)
+                Bukkit:unloadWorld(world, false)
+                script.logger:info(string.format("Unloaded skyblock world for %s", player:getName()))
+            end
 
-                    -- Define a large region to clear (500x500x256)
-                    local pos1 = BlockVector3:at(-250, -64, -250)
-                    local pos2 = BlockVector3:at(250, 319, 250)
-                    local region = CuboidRegion(weWorld, pos1, pos2)
-
-                    -- Replace all non-air blocks with air
-                    editSession:replaceBlocks(region, BlockTypes.AIR:getDefaultState(),
-                        BlockTypes.AIR:getDefaultState():toBaseBlock(), false)
-                    editSession:close()
-
-                    script.logger:info(string.format("Cleared skyblock world for %s", player:getName()))
-
-                    -- Create the starting island on main thread
-                    scheduler:run(function()
-                        createStartingIsland(world, 0, 0)
-                        script.logger:info(string.format("Reset skyblock world for %s", player:getName()))
-
-                        pendingResets[uuid] = nil
-                        pendingDeletions[uuid] = nil
-
-                        if player:isOnline() then
-                            player:sendRichMessage("<green>✓ Your skyblock world has been reset!</green>")
-                            player:sendRichMessage("<gray>Your Skyblock is ready. Run /sb to go there.</gray>")
-                            player:playSound(player:getLocation(), "entity.generic.explode", 0.5, 1.0)
+            -- Delete world folder
+            local serverFolder = Bukkit:getWorldContainer()
+            local worldFolder = File(serverFolder, worldName)
+            if worldFolder:exists() then
+                local function deleteDirectory(dir)
+                    local files = dir:listFiles()
+                    if files ~= nil then
+                        local fileCount = #files
+                        for i = 1, fileCount do
+                            local file = files[i]
+                            if file:isDirectory() then
+                                deleteDirectory(file)
+                            else
+                                file:delete()
+                            end
                         end
-                    end)
-                end)
+                    end
+                    dir:delete()
+                end
+
+                deleteDirectory(worldFolder)
+                script.logger:info(string.format("Deleted skyblock world folder for %s", player:getName()))
             end
 
             -- Delete skyblock state file
             minigame.deletePlayerState("skyblock_sb", uuid)
 
-            -- Note: completion message is sent after async operation completes
+            pendingResets[uuid] = nil
+            pendingDeletions[uuid] = nil
+
+            player:sendRichMessage("<green>✓ Your skyblock world has been deleted!</green>")
+            player:sendRichMessage("<gray>Use /sb to create a fresh island.</gray>")
+            player:playSound(player:getLocation(), "entity.generic.explode", 0.5, 1.0)
             return
         else
             -- First confirmation
@@ -244,7 +254,7 @@ script:registerCommand(function(sender, args)
     local skyblockWorld = getOrCreateSkyblockWorld(player)
 
     if skyblockWorld ~= nil then
-        local spawnLoc = Location(skyblockWorld, 0.5, config.spawnY + 1, 0.5)
+        local spawnLoc = Location(skyblockWorld, 1.5, config.spawnY + 1, -0.5)
         player:teleport(spawnLoc)
 
         -- Set time to day and clear weather
